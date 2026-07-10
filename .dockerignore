@@ -1,0 +1,23 @@
+# Python
+__pycache__
+*.pyc
+.venv
+venv
+*.egg-info
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Локальные настройки
+.env
+*.log
