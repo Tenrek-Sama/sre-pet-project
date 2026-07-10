@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from app.database import SessionLocal, engine
 from app.models import Base, Item
@@ -34,3 +35,8 @@ def create_item(name: str, value: int):
 @app.get("/version")
 def version():
     return {"version": "0.1.0", "author": "SRE student"}
+
+@app/get("/timestamp")
+def timestamp():
+    from datetime import datetime
+    return {"timestamp": datetime.now().isoformat()}
