@@ -36,7 +36,7 @@ def create_item(name: str, value: int):
 def version():
     return {"version": "0.1.0", "author": "SRE student"}
 
-@app/get("/timestamp")
+@app.get("/timestamp")
 def timestamp():
     from datetime import datetime
     return {"timestamp": datetime.now().isoformat()}
