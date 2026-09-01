@@ -42,15 +42,37 @@ jobs:
         run: |
           docker build -t pet-project-app:test .
 
-      # 6. Запустить тесты (пока просто проверка, что контейнер стартует)
+            # 6. Запустить PostgreSQL для теста
+      - name: Start PostgreSQL for testing
+        run: |
+          docker network create test-network
+          docker run -d --name test-postgres --network test-network \
+            -e POSTGRES_USER=user \
+            -e POSTGRES_PASSWORD=password \
+            -e POSTGRES_DB=petproject \
+            postgres:16-alpine
+          sleep 10  # Ждём, пока PostgreSQL стартует
+
+      # 7. Запустить приложение в тестовой сети
       - name: Test container
         run: |
-          docker run -d --name test-app -p 8001:8000 \
-            -e DATABASE_URL="postgresql://user:password@postgres:5432/petproject" \
+          docker run -d --name test-app --network test-network -p 8001:8000 \
+            -e DATABASE_URL="postgresql://user:password@test-postgres:5432/petproject" \
             pet-project-app:test
-          sleep 10
-          curl -f http://localhost:8001/health || exit 1
-          docker stop test-app
+
+          # Ждём, пока приложение запустится (до 60 секунд)
+          for i in $(seq 1 30); do
+            sleep 2
+            if curl -sf http://localhost:8001/health; then
+              echo "✅ Application is healthy"
+              exit 0
+            fi
+            echo "⏳ Waiting for application... ($i/30)"
+          done
+
+          echo "❌ Application failed to start"
+          docker logs test-app
+          exit 1
 
   # ---------- ДЖОБА 2: Деплой ----------
   deploy:
