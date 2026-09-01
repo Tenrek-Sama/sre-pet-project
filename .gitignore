@@ -22,3 +22,4 @@ backups/
 *.tfstate.*
 .terraform/
 tofu/.terraform/
+k8s/secret.yaml
