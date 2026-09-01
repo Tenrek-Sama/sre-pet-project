@@ -1,0 +1,157 @@
+---
+- name: Настройка pet-project
+  hosts: pet_project
+  become: yes
+
+  vars:
+    db_url: "postgresql://user:password@192.168.122.4:5432/petproject"
+
+  tasks:
+    # ============ Базовые пакеты ============
+    - name: Установить базовые пакеты
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - git
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: yes
+
+    # ============ Docker (официальный репозиторий) ============
+    - name: Добавить GPG-ключ Docker
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Добавить репозиторий Docker
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/debian bookworm stable"
+        state: present
+        update_cache: yes
+
+    - name: Установить Docker
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Запустить и включить Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Добавить пользователя в группу docker
+      ansible.builtin.user:
+        name: sre
+        groups: docker
+        append: yes
+
+    # ============ PostgreSQL ============
+    - name: Установить PostgreSQL
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+        state: present
+        update_cache: yes
+
+    - name: Запустить PostgreSQL
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Настроить PostgreSQL слушать TCP/IP
+      ansible.builtin.shell: |
+        sudo -u postgres psql -c "ALTER SYSTEM SET listen_addresses='*';" 2>/dev/null || true
+      changed_when: false
+
+    - name: Добавить правило в pg_hba.conf
+      ansible.builtin.lineinfile:
+        path: /etc/postgresql/15/main/pg_hba.conf
+        line: "host all all 0.0.0.0/0 scram-sha-256"
+        create: yes
+      notify: restart postgresql
+
+    - name: Перезапустить PostgreSQL
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted
+
+    - name: Создать базу данных и пользователя
+      ansible.builtin.shell: |
+        sudo -u postgres psql -c "CREATE DATABASE petproject" 2>/dev/null || true
+        sudo -u postgres psql -c "CREATE USER \"user\" WITH PASSWORD 'password';" 2>/dev/null || true
+        sudo -u postgres psql -d petproject -c "GRANT ALL ON SCHEMA public TO \"user\";" 2>/dev/null || true
+        sudo -u postgres psql -d petproject -c "GRANT ALL PRIVILEGES ON DATABASE petproject TO \"user\";" 2>/dev/null || true
+      changed_when: false
+
+    # ============ Деплой приложения ============
+    - name: Создать директорию проекта
+      ansible.builtin.file:
+        path: /opt/pet-project
+        state: directory
+        owner: sre
+        group: sre
+    
+    - name: Скопировать код приложения
+      ansible.builtin.copy:
+        src: ../app/
+        dest: /opt/pet-project/app/
+    
+    - name: Скопировать Dockerfile
+      ansible.builtin.copy:
+        src: ../Dockerfile
+        dest: /opt/pet-project/Dockerfile
+    
+    - name: Скопировать requirements.txt
+      ansible.builtin.copy:
+        src: ../requirements.txt
+        dest: /opt/pet-project/requirements.txt
+    
+    - name: Собрать Docker-образ
+      ansible.builtin.command:
+        cmd: docker build -t pet-project-app:latest .
+        chdir: /opt/pet-project
+      changed_when: false
+    
+    - name: Запустить контейнер
+      ansible.builtin.shell:
+        cmd: docker rm -f pet-project-app 2>/dev/null; docker run -d --name pet-project-app -p 8000:8000 -e DATABASE_URL="{{ db_url }}" --restart unless-stopped pet-project-app:latest
+      register: run_result
+      changed_when: run_result.rc == 0
+
+    # ============ Health-check ============
+    - name: Дождаться запуска
+      ansible.builtin.wait_for:
+        port: 8000
+        host: localhost
+        timeout: 60
+        delay: 15
+    
+    - name: Проверить health endpoint
+      ansible.builtin.uri:
+        url: http://localhost:8000/health
+        return_content: yes
+      register: health_result
+      retries: 5
+      delay: 5
+      until: health_result.status == 200
+    
+    - name: Показать результат health-check
+      ansible.builtin.debug:
+        msg: "Health: {{ health_result.content }}"
+  
+  handlers:
+    - name: restart postgresql
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted

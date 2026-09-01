@@ -1,0 +1,75 @@
+name: CI/CD Pipeline
+
+# ============ ТРИГГЕРЫ ============
+# Когда запускать пайплайн
+on:
+  push:
+    branches: [ main ]       # При пуше в main
+  pull_request:
+    branches: [ main ]       # При PR в main
+  workflow_dispatch:          # Вручную кнопкой в GitHub UI
+
+# ============ ДЖОБЫ ============
+jobs:
+  # ---------- ДЖОБА 1: Сборка и тест ----------
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest    # На какой VM выполнять
+
+    steps:
+      # 1. Склонировать репозиторий на раннер
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Установить Python 3.12
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 3. Установить зависимости
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      # 4. Проверить синтаксис Python
+      - name: Check Python syntax
+        run: |
+          python -m py_compile app/*.py
+
+      # 5. Собрать Docker-образ
+      - name: Build Docker image
+        run: |
+          docker build -t pet-project-app:test .
+
+      # 6. Запустить тесты (пока просто проверка, что контейнер стартует)
+      - name: Test container
+        run: |
+          docker run -d --name test-app -p 8001:8000 \
+            -e DATABASE_URL="postgresql://user:password@postgres:5432/petproject" \
+            pet-project-app:test
+          sleep 10
+          curl -f http://localhost:8001/health || exit 1
+          docker stop test-app
+
+  # ---------- ДЖОБА 2: Деплой ----------
+  deploy:
+    name: Deploy to k3s
+    runs-on: ubuntu-latest
+    needs: build-and-test    # Запускать только после успешной сборки
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Сохранить kubeconfig как секрет (в настройках репозитория)
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Deploy to k3s
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          kubectl apply -f k8s/
+          kubectl rollout status deployment/fastapi-app --timeout=120s
+          kubectl get pods

@@ -1,0 +1,4 @@
+---
+app_name: pet-project
+app_port: 8000
+database_url: postgresql://user:password@localhost:5432/petproject

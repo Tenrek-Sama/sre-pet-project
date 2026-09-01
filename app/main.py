@@ -2,11 +2,13 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from app.database import SessionLocal, engine
 from app.models import Base, Item
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Создаём таблицы (в продакшене через миграции, но для пет-проекта ок)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SRE Pet Project")
+Instrumentator().instrument(app).expose(app)
 
 @app.get("/health")
 def health():
