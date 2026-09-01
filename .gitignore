@@ -18,3 +18,7 @@ backups/
 
 # Env
 .env
+*.tfstate
+*.tfstate.*
+.terraform/
+tofu/.terraform/
