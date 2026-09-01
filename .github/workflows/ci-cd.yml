@@ -77,7 +77,7 @@ jobs:
   # ---------- ДЖОБА 2: Деплой ----------
   deploy:
     name: Deploy to k3s
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build-and-test    # Запускать только после успешной сборки
 
     steps:
@@ -90,8 +90,6 @@ jobs:
 
       - name: Deploy to k3s
         run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
           kubectl apply -f k8s/
           kubectl rollout status deployment/fastapi-app --timeout=120s
           kubectl get pods
